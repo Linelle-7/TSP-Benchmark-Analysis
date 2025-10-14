@@ -1,6 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import numpy as np
+
 
 
 
@@ -29,24 +31,33 @@ for name, df in data.items():
     var = df["runtime_s"].var()
     std = df["runtime_s"].std()
 
-    print(f"\n📊 {name}")
+    print(f" {name}")
     print(f"  Mittelwert:         {mean:.2f} Sekunden")
     print(f"  Median:             {median:.2f} Sekunden")
     print(f"  Varianz:            {var:.2f}")
     print(f"  Standardabweichung: {std:.2f}")
 
 plt.figure(figsize=(10, 6))
+
 for name, df in data.items():
     
-    plt.plot( df["runtime_s"],df["id"],  linewidth=1, label=name)
-    plt.ylabel("Laufzeit (Sekunden)")
-    plt.xlabel("Häufigkeit")
-    plt.title("Verteilung der Laufzeiten" )
-    plt.legend()
+    runtimes_rounded = df["runtime_s"].round(1)
 
-    plt.show()
-    plt.tight_layout()
-    plt.savefig("runtime_distribution111.png") 
-    print (df["id"])
+    
+    counts = runtimes_rounded.value_counts().sort_index()
 
 
+    counts = counts[(counts.index >= 0) & (counts.index <= 800)]
+
+ 
+    plt.plot(counts.index, counts.values, linewidth=1, label=name)
+
+plt.xlabel("Laufzeit (Sekunden)")
+plt.ylabel("Häufigkeit")
+plt.title("Verteilung der Laufzeiten – Vergleich der Prozessoren")
+plt.xlim(0, 600)
+plt.ylim(0, 80)
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+plt.show()
