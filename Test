@@ -30,33 +30,31 @@ for name, df in data.items():
     median = df["runtime_s"].median()
     var = df["runtime_s"].var()
     std = df["runtime_s"].std()
+    max=df["runtime_s"].max()
+    min=df["runtime_s"].min()
 
     print(f" {name}")
     print(f"  Mittelwert:         {mean:.2f} Sekunden")
     print(f"  Median:             {median:.2f} Sekunden")
     print(f"  Varianz:            {var:.2f}")
     print(f"  Standardabweichung: {std:.2f}")
+    print(f"  Minimale Laufzeit:  {min:.2f} sekunden")
+    print(f"  Maximale Laufzeit:  {max:.2f} sekunden")
 
 plt.figure(figsize=(10, 6))
 
 for name, df in data.items():
     
-    runtimes_rounded = df["runtime_s"].round(1)
-
-    
+    runtimes_rounded = df["runtime_s"] #.round(1)
     counts = runtimes_rounded.value_counts().sort_index()
-
-
-    counts = counts[(counts.index >= 0) & (counts.index <= 800)]
-
- 
+    #counts = counts[(counts.index >= 0) & (counts.index <= 800)]
     plt.plot(counts.index, counts.values, linewidth=1, label=name)
 
 plt.xlabel("Laufzeit (Sekunden)")
 plt.ylabel("Häufigkeit")
 plt.title("Verteilung der Laufzeiten – Vergleich der Prozessoren")
-plt.xlim(0, 600)
-plt.ylim(0, 80)
+#plt.xlim(-10, 600)
+#plt.ylim(-10, 80)
 plt.legend()
 plt.grid(True, alpha=0.3)
 
