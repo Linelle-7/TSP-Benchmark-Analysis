@@ -38,9 +38,9 @@ for name, df in data.items():
 plt.figure(figsize=(10, 6))
 for name, df in data.items():
     
-    plt.plot(df["id"], df["runtime_s"], linewidth=1, label=name)
-    plt.xlabel("Laufzeit (Sekunden)")
-    plt.ylabel("Häufigkeit")
+    plt.plot( df["runtime_s"],df["id"],  linewidth=1, label=name)
+    plt.ylabel("Laufzeit (Sekunden)")
+    plt.xlabel("Häufigkeit")
     plt.title("Verteilung der Laufzeiten" )
     plt.legend()
 
