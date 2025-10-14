@@ -18,9 +18,9 @@ def read_and_compute_runtime(filename):
     return df
 
 files = {
-    "Intel N95 (mp80)": "runtimes.mp80",
-    "Intel N100": "runtimes.n100",
-    "Raspberry Pi 5": "runtimes.pi5"
+    "Intel N95 (mp80)": r"C:\GitProjekts\PDA\runtimes.mp80",
+    "Intel N100": r"C:\GitProjekts\PDA\runtimes.n100",
+    "Raspberry Pi 5": r"C:\GitProjekts\PDA\runtimes.pi5"
 }
 
 data = {name: read_and_compute_runtime(path) for name, path in files.items()}
@@ -32,6 +32,7 @@ for name, df in data.items():
     std = df["runtime_s"].std()
     max=df["runtime_s"].max()
     min=df["runtime_s"].min()
+    
 
     print(f" {name}")
     print(f"  Mittelwert:         {mean:.2f} Sekunden")
@@ -40,6 +41,7 @@ for name, df in data.items():
     print(f"  Standardabweichung: {std:.2f}")
     print(f"  Minimale Laufzeit:  {min:.2f} sekunden")
     print(f"  Maximale Laufzeit:  {max:.2f} sekunden")
+    print()
 
 plt.figure(figsize=(10, 6))
 
