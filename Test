@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-
-
 def read_and_compute_runtime(filename):
     df = pd.read_csv(filename, sep=r"\s+", header=None,
                      names=["id", "start", "pre_end", "solver_end"])
