@@ -1,0 +1,100 @@
+import os, json
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Read runtimes (Intel N95)
+def read_and_compute_runtime(filename: str) -> pd.DataFrame:
+    df = pd.read_csv(
+        filename, sep=r"\s+", header=None,
+        names=["id", "start", "pre_end", "solver_end"]
+    )
+    tf = "%d.%m.%Y-%H:%M:%S"
+    df["start"] = pd.to_datetime(df["start"], format=tf, errors="coerce")
+    df["solver_end"] = pd.to_datetime(df["solver_end"], format=tf, errors="coerce")
+    df["runtime_s"] = (df["solver_end"] - df["start"]).dt.total_seconds()
+    return df
+
+runtimes = read_and_compute_runtime("runtimes.mp80")
+
+# Read dimensions from JSON files
+def read_dimensions(folder: str, prefix: str, n=2000):
+    dims = []
+    for i in range(n):
+        path = os.path.join(folder, f"{prefix}_{i}.json")
+        if not os.path.exists(path):
+            dims.append(None)
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        dims.append(data.get("dimension"))
+    return dims
+
+dims_300_700  = read_dimensions("b300_700.1",  "b300_700.1")
+dims_700_1000 = read_dimensions("b700_1000.1", "b700_1000.1")
+
+# Combine into one DataFrame (use first 2000 runtimes for both)
+nA = min(2000, len(dims_300_700), len(runtimes))
+nB = min(2000, len(dims_700_1000), len(runtimes))
+
+df_a = pd.DataFrame({
+    "set": "b300_700.1",
+    "dimension": dims_300_700[:nA],
+    "runtime_s": runtimes["runtime_s"].iloc[:nA].values
+}).dropna()
+
+df_b = pd.DataFrame({
+    "set": "b700_1000.1",
+    "dimension": dims_700_1000[:nB],
+    "runtime_s": runtimes["runtime_s"].iloc[:nB].values
+}).dropna()
+
+df_all = pd.concat([df_a, df_b], ignore_index=True)
+print("Daten geladen:")
+print(df_all.head())
+
+# Scatterplot (dimension vs runtime)
+plt.figure(figsize=(10, 6))
+plt.scatter(df_a["dimension"], df_a["runtime_s"], s=10, alpha=0.5, label="b300_700.1")
+plt.scatter(df_b["dimension"], df_b["runtime_s"], s=10, alpha=0.5, label="b700_1000.1")
+plt.xlabel("Dimension (Anzahl Städte)")
+plt.ylabel("Laufzeit (Sekunden)")
+plt.title("TSP: Laufzeit vs. Problemgröße (Intel N95, gleiche 2000 Laufzeiten)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("scatter_dimension_runtime.png")
+plt.show()
+
+# Group by dimension ranges and compute 95% quantile
+bins = np.arange(300, 1000, 20)  # 300–319, 320–339, ...
+labels = [f"{b}-{b+19}" for b in bins]
+df_all["dim_group"] = pd.cut(
+    df_all["dimension"],
+    bins=np.append(bins, 1000),
+    labels=labels,
+    include_lowest=True
+)
+quantiles = df_all.groupby("dim_group", observed=True)["runtime_s"].quantile(0.95).dropna()
+
+# Plot 95% quantile vs dimension
+plt.figure(figsize=(10, 6))
+plt.plot(bins[:len(quantiles)], quantiles.values, marker="o", linestyle="-", color="steelblue")
+plt.xlabel("Dimension (Gruppen)")
+plt.ylabel("95%-Quantil der Laufzeit (Sekunden)")
+plt.title("95%-Quantil der Laufzeiten je Dimension (Intel N95)")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("quantile_95_plot.png")
+plt.show()
+
+# Plot logarithm of the 95% quantiles
+plt.figure(figsize=(10, 6))
+plt.plot(bins[:len(quantiles)], np.log(quantiles.values), marker="o", linestyle="-", color="orange")
+plt.xlabel("Dimension (Gruppen)")
+plt.ylabel("log(95%-Quantil der Laufzeit)")
+plt.title("Logarithmus der 95%-Quantile der Laufzeiten je Dimension")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("quantile_log_plot.png")
+plt.show()
