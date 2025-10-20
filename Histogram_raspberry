@@ -1,0 +1,57 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import numpy as np
+
+
+
+
+def read_and_compute_runtime(filename):
+    df = pd.read_csv(filename, sep=r"\s+", header=None,
+                     names=["id", "start", "pre_end", "solver_end"])
+
+    time_format = "%d.%m.%Y-%H:%M:%S"
+    df["start"] = pd.to_datetime(df["start"], format=time_format)
+    df["solver_end"] = pd.to_datetime(df["solver_end"], format=time_format)
+    df["runtime_s"] = (df["solver_end"] - df["start"]).dt.total_seconds()
+
+    return df
+
+files = {
+    "Intel N95 (mp80)": "runtimes.mp80",
+    "Intel N100": "runtimes.n100",
+    "Raspberry Pi 5": "runtimes.pi5"
+}
+
+data = {name: read_and_compute_runtime(path) for name, path in files.items()}
+
+for name, df in data.items():
+    mean = df["runtime_s"].mean()
+    median = df["runtime_s"].median()
+    var = df["runtime_s"].var()
+    std = df["runtime_s"].std()
+
+    print(f"\n📊 {name}")
+    print(f"  Mittelwert:         {mean:.2f} Sekunden")
+    print(f"  Median:             {median:.2f} Sekunden")
+    print(f"  Varianz:            {var:.2f}")
+    print(f"  Standardabweichung: {std:.2f}")
+
+plt.figure(figsize=(10, 6))
+
+
+df_pi5 = data["Raspberry Pi 5"]
+
+runtimes = df_pi5["runtime_s"]
+
+plt.hist(runtimes,bins=500)
+plt.xlim(0, 2000)
+plt.xlabel("Laufzeit (Sekunden)")
+plt.ylabel("Häufigkeit")
+plt.title("Verteilung der Laufzeiten – Raspberry Pi 5")
+
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+
+plt.savefig("runtime_histogram_raspberry_pi5.png")
+plt.show()
