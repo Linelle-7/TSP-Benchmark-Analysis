@@ -41,11 +41,10 @@ plt.figure(figsize=(10, 6))
 
 
 df_pi5 = data["Raspberry Pi 5"]
-
 runtimes = df_pi5["runtime_s"]
 
 plt.hist(runtimes,bins=500)
-plt.xlim(0, 2000)
+#plt.xlim(0, 2000)
 plt.xlabel("Laufzeit (Sekunden)")
 plt.ylabel("Häufigkeit")
 plt.title("Verteilung der Laufzeiten – Raspberry Pi 5")
@@ -53,5 +52,5 @@ plt.title("Verteilung der Laufzeiten – Raspberry Pi 5")
 plt.grid(axis="y", alpha=0.3)
 plt.tight_layout()
 
-plt.savefig("runtime_histogram_raspberry_pi5.png")
+plt.savefig("runtime_histogram_raspberry_pi5.2.png")
 plt.show()
