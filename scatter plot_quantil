@@ -54,8 +54,9 @@ print("Daten geladen:")
 print(df_all.head())
 
 # Scatterplot (dimension vs runtime)
+
 plt.figure(figsize=(10, 6))
-plt.scatter(df_a["dimension"], df_a["runtime_s"], s=10, alpha=0.5, label="b300_700.1")
+#plt.scatter(df_a["dimension"], df_a["runtime_s"] , s=10, alpha=0.5, label="b300_700.1")
 plt.scatter(df_b["dimension"], df_b["runtime_s"], s=10, alpha=0.5, label="b700_1000.1")
 plt.xlabel("Dimension (Anzahl Städte)")
 plt.ylabel("Laufzeit (Sekunden)")
@@ -63,38 +64,56 @@ plt.title("TSP: Laufzeit vs. Problemgröße (Intel N95, gleiche 2000 Laufzeiten)
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig("scatter_dimension_runtime.png")
+plt.savefig("scatter.df_b.png")
 plt.show()
 
 # Group by dimension ranges and compute 95% quantile
-bins = np.arange(300, 1000, 20)  # 300–319, 320–339, ...
-labels = [f"{b}-{b+19}" for b in bins]
-df_all["dim_group"] = pd.cut(
-    df_all["dimension"],
-    bins=np.append(bins, 1000),
-    labels=labels,
+bins1= np.arange(300, 730, 20)
+labels1 = [f"{b}-{b+19}" for b in bins1]
+df1=df_a
+df2=df_b
+
+df1["dim_group"] = pd.cut(
+    df_a["dimension"],
+    bins=np.append(bins1, 1000),
+    labels=labels1,
+    include_lowest=True)
+
+bins2 = np.arange(700, 1000, 20)  
+labels2 = [f"{b}-{b+19}" for b in bins2]
+
+
+
+df2["dim_group"] = pd.cut(
+    df_b["dimension"],
+    bins=np.append(bins2, 1000),
+    labels=labels2,
     include_lowest=True
 )
-quantiles = df_all.groupby("dim_group", observed=True)["runtime_s"].quantile(0.95).dropna()
+quantiles1 = df1.groupby("dim_group", observed=True)["runtime_s"].quantile(0.95).dropna()
+quantiles2 = df2.groupby("dim_group", observed=True)["runtime_s"].quantile(0.95).dropna()
 
 # Plot 95% quantile vs dimension
 plt.figure(figsize=(10, 6))
-plt.plot(bins[:len(quantiles)], quantiles.values, marker="o", linestyle="-", color="steelblue")
+plt.plot(bins1[:len(quantiles1)], quantiles1.values, marker="o", linestyle="-", color="steelblue")
+plt.plot(bins2[:len(quantiles2)], quantiles2.values, marker="o", linestyle="-", color="orange")
+
 plt.xlabel("Dimension (Gruppen)")
 plt.ylabel("95%-Quantil der Laufzeit (Sekunden)")
 plt.title("95%-Quantil der Laufzeiten je Dimension (Intel N95)")
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig("quantile_95_plot.png")
+plt.savefig("quantile_95_plot.2.png")
 plt.show()
 
 # Plot logarithm of the 95% quantiles
 plt.figure(figsize=(10, 6))
-plt.plot(bins[:len(quantiles)], np.log(quantiles.values), marker="o", linestyle="-", color="orange")
+plt.plot(bins1[:len(quantiles1)], np.log(quantiles1.values), marker="o", linestyle="-", color="steelblue")
+plt.plot(bins2[:len(quantiles2)], np.log(quantiles2.values), marker="o", linestyle="-", color="orange")
 plt.xlabel("Dimension (Gruppen)")
 plt.ylabel("log(95%-Quantil der Laufzeit)")
 plt.title("Logarithmus der 95%-Quantile der Laufzeiten je Dimension")
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig("quantile_log_plot.png")
+plt.savefig("quantile_log_plot.2.png")
 plt.show()
