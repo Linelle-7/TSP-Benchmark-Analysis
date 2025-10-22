@@ -1,0 +1,13 @@
+#extrahiere die Laufnummern der Instanzen, denen Laufzeiten 0 Sekunden ist vom Intel N100 und in TextDatei schreiben
+error=[]
+df_N100=data["Intel N100"]
+#print(df_N100)
+
+for _, row in df_N100.iterrows():
+    if row["runtime_s"] == 0:
+        error.append(row["id"])
+
+
+with open("error_instances.txt", "w") as f:
+    for e in error:
+        f.write(str(e) + "\n")

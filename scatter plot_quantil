@@ -15,7 +15,7 @@ def read_and_compute_runtime(filename: str) -> pd.DataFrame:
     df["runtime_s"] = (df["solver_end"] - df["start"]).dt.total_seconds()
     return df
 
-runtimes = read_and_compute_runtime("runtimes.mp80")
+runtimes = read_and_compute_runtime(r"C:\GitProjekts\PDA\runtimes.mp80")
 
 # Read dimensions from JSON files
 def read_dimensions(folder: str, prefix: str, n=2000):
@@ -30,8 +30,8 @@ def read_dimensions(folder: str, prefix: str, n=2000):
         dims.append(data.get("dimension"))
     return dims
 
-dims_300_700  = read_dimensions("b300_700.1",  "b300_700.1")
-dims_700_1000 = read_dimensions("b700_1000.1", "b700_1000.1")
+dims_300_700  = read_dimensions(r"C:\GitProjekts\PDA\b300_700.1.tar.gz",  "b300_700.1")
+dims_700_1000 = read_dimensions(r"C:\GitProjekts\PDA\b700_1000.1.tar.gz", "b700_1000.1")
 
 # Combine into one DataFrame (use first 2000 runtimes for both)
 nA = min(2000, len(dims_300_700), len(runtimes))
