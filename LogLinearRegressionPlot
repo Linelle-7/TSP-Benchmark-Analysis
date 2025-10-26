@@ -1,0 +1,178 @@
+import os, json
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ---------- helper: resolve folder names ----------
+def resolve_folder(*candidates):
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    raise FileNotFoundError(f"None of these folders exist: {candidates}")
+
+folder_a = resolve_folder("b300_700.1", "b300_700")
+folder_b = resolve_folder("b700_1000.1", "b700_1000")
+
+# ---------- read runtimes ----------
+def read_and_compute_runtime(filename: str) -> pd.DataFrame:
+    df = pd.read_csv(filename, sep=r"\s+", header=None,
+                     names=["id", "start", "pre_end", "solver_end"])
+    tf = "%d.%m.%Y-%H:%M:%S"
+    df["start"] = pd.to_datetime(df["start"], format=tf, errors="coerce")
+    df["solver_end"] = pd.to_datetime(df["solver_end"], format=tf, errors="coerce")
+    df["runtime_s"] = (df["solver_end"] - df["start"]).dt.total_seconds()
+    return df
+
+runtimes_a = read_and_compute_runtime(os.path.join(folder_a, "runtimes.mp80"))
+runtimes_b = read_and_compute_runtime(os.path.join(folder_b, "runtimes.mp80"))
+
+# ---------- read dimensions ----------
+def read_dimensions(folder: str, n=2000):
+    dims = []
+    stem = os.path.basename(folder)
+    stems_to_try = [stem, stem + ".1"] if not stem.endswith(".1") else [stem, stem[:-2]]
+
+    for i in range(n):
+        candidates = []
+        for s in stems_to_try:
+            candidates.append(os.path.join(folder, f"{s}_{i}.json"))
+            candidates.append(os.path.join(folder, f"{s}_{i}_sol.json"))
+        path = next((p for p in candidates if os.path.exists(p)), None)
+        if path is None:
+            dims.append(None)
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        dims.append(data.get("dimension"))
+    return dims
+
+dims_a = read_dimensions(folder_a, n=2000)
+dims_b = read_dimensions(folder_b, n=2000)
+
+# ---------- combine both datasets ----------
+nA = min(len(dims_a), len(runtimes_a))
+nB = min(len(dims_b), len(runtimes_b))
+
+df_a = pd.DataFrame({
+    "dimension": dims_a[:nA],
+    "runtime_s": runtimes_a["runtime_s"].iloc[:nA].values
+}).dropna(subset=["dimension", "runtime_s"])
+
+df_b = pd.DataFrame({
+    "dimension": dims_b[:nB],
+    "runtime_s": runtimes_b["runtime_s"].iloc[:nB].values
+}).dropna(subset=["dimension", "runtime_s"])
+
+df_all = pd.concat([df_a, df_b], ignore_index=True).sort_values("dimension")
+print(f"✅ Combined total rows: {len(df_all)}")
+
+# ---------- scatter plot ----------
+plt.figure(figsize=(10, 6))
+plt.scatter(df_all["dimension"], df_all["runtime_s"], s=12, alpha=0.6, color="steelblue")
+plt.xlabel("Dimension (Anzahl Städte)")
+plt.ylabel("Laufzeit (Sekunden)")
+plt.title("TSP: Laufzeit vs. Problemgröße (kombinierte Datensätze b300–1000)")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("scatter_dimension_runtime_combined.png", dpi=200)
+plt.show()
+
+# ---------- group by dimension ranges ----------
+bins = np.arange(300, 1000, 20)
+labels = [f"{b}-{b+19}" for b in bins]
+df_all["dim_group"] = pd.cut(
+    df_all["dimension"],
+    bins=np.append(bins, 1000),
+    labels=labels,
+    include_lowest=True
+)
+
+quantiles = df_all.groupby("dim_group", observed=True)["runtime_s"].quantile(0.95).dropna()
+
+edges = np.append(bins, 1000)
+mids = (edges[:-1] + edges[1:]) / 2.0
+label_to_mid = {lab: mid for lab, mid in zip(labels, mids)}
+x = np.array([label_to_mid[str(lbl)] for lbl in quantiles.index])
+y = np.array(quantiles.values)
+
+# ---------- 95%-quantile plot ----------
+plt.figure(figsize=(10, 6))
+plt.plot(x, y, marker="o", linestyle="-", color="darkorange")
+plt.xlabel("Dimension (Gruppen-Mittelpunkt)")
+plt.ylabel("95%-Quantil der Laufzeit (Sekunden)")
+plt.title("95%-Quantil der Laufzeiten je Dimensionsgruppe (b300–1000 kombiniert)")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("quantile_95_plot_combined.png", dpi=200)
+plt.show()
+
+# ---------- log(quantile) plot ----------
+plt.figure(figsize=(10, 6))
+plt.plot(x, np.log(y), marker="o", linestyle="-", color="seagreen")
+plt.xlabel("Dimension (Gruppen-Mittelpunkt)")
+plt.ylabel("log(95%-Quantil der Laufzeit)")
+plt.title("Logarithmus der 95%-Quantile der Laufzeiten (b300–1000 kombiniert)")
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("quantile_log_plot_combined.png", dpi=200)
+plt.show()
+
+# ====================================================================
+# ---------- manual linear regression on log(quantile) ----------
+# ====================================================================
+mask = np.isfinite(x) & np.isfinite(y) & (y > 0)
+x = x[mask]
+y = y[mask]
+log_y = np.log(y)
+
+n = len(x)
+sum_x = np.sum(x)
+sum_y = np.sum(log_y)
+sum_xy = np.sum(x * log_y)
+sum_x2 = np.sum(x**2)
+
+den = n * sum_x2 - (sum_x**2)
+a = (n * sum_xy - sum_x * sum_y) / den
+b = (sum_y - a * sum_x) / n
+
+# fitted values
+log_y_fit = a * x + b
+y_fit = np.exp(b) * np.exp(a * x)
+
+# manual R^2 in log-space
+ss_tot = np.sum((log_y - np.mean(log_y))**2)
+ss_res = np.sum((log_y - log_y_fit)**2)
+r2 = 1 - ss_res / ss_tot
+
+print("\n=== Manuelle Regression (log-Domäne) ===")
+print(f"Slope (a):       {a:.6f}")
+print(f"Intercept (b):   {b:.6f}")
+print(f"Gleichung:       log(y) = {a:.6f} * x + {b:.6f}")
+print(f"R^2 (log-space): {r2:.4f}")
+print(f"Exponentiell:    y = {np.exp(b):.3e} * e^({a:.6f} * x)")
+
+# ---- plot: exponential fit on original quantiles ----
+plt.figure(figsize=(10, 6))
+plt.plot(x, y, "o", label="95%-Quantil (Daten)", color="steelblue")
+plt.plot(x, y_fit, "-", label=f"Exp-Fit: y = {np.exp(b):.2e}·e^({a:.4f}x)", color="crimson", linewidth=2)
+plt.xlabel("Dimension (Gruppen-Mittelpunkt)")
+plt.ylabel("95%-Quantil der Laufzeit (Sekunden)")
+plt.title("95%-Quantil mit exponentieller Anpassung")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("quantile_95_with_exp_fit.png", dpi=200)
+plt.show()
+
+# ---- plot: linear fit on log(quantile) ----
+plt.figure(figsize=(10, 6))
+plt.plot(x, log_y, "o", label="log(95%-Quantil)", color="seagreen")
+plt.plot(x, log_y_fit, "-", label=f"Linearer Fit: log(y) = {a:.4f}x + {b:.2f}", color="black", linewidth=2)
+plt.xlabel("Dimension (Gruppen-Mittelpunkt)")
+plt.ylabel("log(95%-Quantil der Laufzeit)")
+plt.title("Lineare Regression auf log(95%-Quantil)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("log_quantile_with_linear_fit.png", dpi=200)
+plt.show()
