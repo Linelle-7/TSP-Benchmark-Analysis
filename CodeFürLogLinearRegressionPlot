@@ -10,8 +10,8 @@ def resolve_folder(*candidates):
             return c
     raise FileNotFoundError(f"None of these folders exist: {candidates}")
 
-folder_a = resolve_folder("b300_700.1", "b300_700")
-folder_b = resolve_folder("b700_1000.1", "b700_1000")
+folder_a = resolve_folder(r"C:\GitProjekts\PDA\b300_700.1", "b300_700")
+folder_b = resolve_folder(r"C:\GitProjekts\PDA\b700_1000.1", "b700_1000")
 
 # ---------- read runtimes ----------
 def read_and_compute_runtime(filename: str) -> pd.DataFrame:
