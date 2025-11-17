@@ -97,7 +97,7 @@ quantiles2 = df2.groupby("dim_group", observed=True)["runtime_s"].quantile(0.95)
 plt.figure(figsize=(10, 6))
 plt.plot(bins1[:len(quantiles1)], quantiles1.values, marker="o", linestyle="-", color="steelblue")
 plt.plot(bins2[:len(quantiles2)], quantiles2.values, marker="o", linestyle="-", color="orange")
-
+ 
 plt.xlabel("Dimension (Gruppen)")
 plt.ylabel("95%-Quantil der Laufzeit (Sekunden)")
 plt.title("95%-Quantil der Laufzeiten je Dimension (Intel N95)")
