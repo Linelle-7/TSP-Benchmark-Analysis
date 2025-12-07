@@ -1,0 +1,163 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.neighbors import NearestNeighbors
+
+# ======================================================
+# CONFIG –> CHANGE TARGET_HOPKINS HERE
+# ======================================================
+N_POINTS       = 500       # number of points
+GRID_SIZE      = 1000      # 0..1000 in both axes
+N_CLUSTERS     = 5         # fixed number of cluster centers
+BATCH_SIZE     = 10        # "assign 10 points each time"
+TARGET_HOPKINS = 0.9      # <<< CHANGE THIS TO YOUR TARGET
+TOLERANCE      = 0.02      # how close we need to be
+MAX_BATCHES    = 2000      # safety limit
+
+CSV_FILE       = "points_target_hopkins.csv"
+PLOT_FILE      = "points_target_hopkins.png"
+
+# ======================================================
+# HOPKINS INDEX (FIXED VERSION)
+# ======================================================
+def hopkins_statistic(X, m=None):
+    """
+    Compute Hopkins statistic for dataset X (n x d).
+    We normalise X to [0,1]^d first, then use
+    proper nearest neighbours (excluding self).
+    """
+    X = np.asarray(X)
+    n, d = X.shape
+
+    # normalise to [0,1]^d
+    mins = X.min(axis=0)
+    maxs = X.max(axis=0)
+    denom = (maxs - mins)
+    denom[denom == 0] = 1.0
+    Xn = (X - mins) / denom
+
+    if m is None:
+        m = min(100, n // 2)
+
+    # fit NN on normalised data
+    nn = NearestNeighbors(n_neighbors=2).fit(Xn)
+
+    # sample m real points
+    idx = np.random.choice(n, m, replace=False)
+    X_sample = Xn[idx]
+
+    # sample m artificial random points in same space
+    U = np.random.rand(m, d)
+
+    # distances from random points to nearest real point
+    u_dist, _ = nn.kneighbors(U, n_neighbors=1)
+    u = u_dist[:, 0]
+
+    # distances from real points to nearest *other* real point
+    w_dist, _ = nn.kneighbors(X_sample, n_neighbors=2)
+    w = w_dist[:, 1]   # second neighbour = excluding itself
+
+    H = u.sum() / (u.sum() + w.sum())
+    return float(H)
+
+# ======================================================
+# CIRCLE REASSIGNMENT AROUND A CENTER
+# ======================================================
+def reassign_point_circle(p, c):
+    """
+    Reassign point p inside circle around center c
+    (radius = distance original(p, c)), unless new
+    coordinates leave the [0, GRID_SIZE] box.
+    """
+    px, py = p
+    cx, cy = c
+    vec = np.array([px - cx, py - cy])
+    dist = np.linalg.norm(vec)
+
+    if dist == 0:
+        return p.copy()
+
+    angle = np.random.uniform(0, 2 * np.pi)
+    radius = np.random.uniform(0, dist)
+
+    nx = cx + radius * np.cos(angle)
+    ny = cy + radius * np.sin(angle)
+
+    if nx < 0 or nx > GRID_SIZE or ny < 0 or ny > GRID_SIZE:
+        return p.copy()
+
+    return np.array([nx, ny])
+
+# ======================================================
+# MAIN GENERATION + OPTIMISATION
+# ======================================================
+def generate_points_with_target_hopkins():
+    # 1) initial random points
+    points = np.random.uniform(0, GRID_SIZE, size=(N_POINTS, 2))
+
+    # 2) pick fixed cluster centers (they never move)
+    center_indices = np.random.choice(N_POINTS, N_CLUSTERS, replace=False)
+    centers = points[center_indices].copy()
+    center_mask = np.zeros(N_POINTS, dtype=bool)
+    center_mask[center_indices] = True
+
+    # 3) initial hopkins
+    current_H = hopkins_statistic(points)
+    print(f"Initial Hopkins: {current_H:.4f}")
+
+    # helper: nearest center index for each point
+    def nearest_center_idx(p):
+        d = np.linalg.norm(centers - p, axis=1)
+        return int(np.argmin(d))
+
+    # 4) iterative improvement
+    for batch in range(1, MAX_BATCHES + 1):
+        # do BATCH_SIZE random reassignments
+        for _ in range(BATCH_SIZE):
+            i = np.random.randint(0, N_POINTS)
+            if center_mask[i]:
+                continue  # don't move centers
+
+            old_p = points[i].copy()
+            c = centers[nearest_center_idx(old_p)]
+
+            new_p = reassign_point_circle(old_p, c)
+            points[i] = new_p
+
+        # recompute Hopkins after batch
+        new_H = hopkins_statistic(points)
+
+        # print progress occasionally
+        if batch % 20 == 0 or batch == 1:
+            print(f"Batch {batch:4d}  Hopkins = {new_H:.4f}")
+
+        # check stop condition
+        if abs(new_H - TARGET_HOPKINS) < TOLERANCE:
+            print(f"Target reached at batch {batch}: Hopkins = {new_H:.4f}")
+            current_H = new_H
+            break
+
+        current_H = new_H
+
+    print(f"Final Hopkins: {current_H:.4f}")
+
+    # 5) save CSV
+    df = pd.DataFrame(points, columns=["x", "y"])
+    df.to_csv(CSV_FILE, index=False)
+    print(f"Saved CSV: {CSV_FILE}")
+
+    # 6) save plot
+    plt.figure(figsize=(6, 6))
+    plt.scatter(points[:, 0], points[:, 1], s=8)
+    plt.title(f"Points (Hopkins={current_H:.3f})")
+    plt.xlim(0, GRID_SIZE)
+    plt.ylim(0, GRID_SIZE)
+    plt.savefig(PLOT_FILE, dpi=150)
+    plt.close()
+    print(f"Saved plot: {PLOT_FILE}")
+
+    return points, current_H
+
+
+if __name__ == "__main__":
+    generate_points_with_target_hopkins()
