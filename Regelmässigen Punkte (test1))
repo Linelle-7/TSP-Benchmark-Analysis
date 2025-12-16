@@ -1,0 +1,83 @@
+import random
+import matplotlib.pyplot as plt
+
+GRID_SIZE = 100
+BASE_PROB = 0.03  # 3%
+
+points = []  # list of (x, y)
+
+# Track last spawn positions in each row / column
+last_point_in_row = [None for _ in range(GRID_SIZE)]
+last_point_in_col = [None for _ in range(GRID_SIZE)]
+
+# grid[y][x] = 1 if a point is spawned there
+grid = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+
+for y in range(GRID_SIZE):        # row by row (top to bottom)
+    for x in range(GRID_SIZE):    # left to right
+
+        # -----------------------------
+        # Horizontal influence (same row)
+        # -----------------------------
+        if last_point_in_row[y] is None:
+            horizontal_multiplier = 1.0
+        else:
+            distance = x - last_point_in_row[y]
+            if distance <= 0:
+                distance = 1
+            horizontal_multiplier = 10.0 / distance
+
+        # if immediate left cell has a point → strong cluster
+        if x > 0 and grid[y][x-1] == 1:
+            horizontal_multiplier = 10.0
+
+        # -----------------------------
+        # Vertical influence (same column)
+        # -----------------------------
+        if last_point_in_col[x] is None:
+            vertical_multiplier = 1.0
+        else:
+            vdist = y - last_point_in_col[x]
+            if vdist <= 0:
+                vdist = 1
+            vertical_multiplier = 4.0 / vdist
+
+        # if cell directly above has a point → strong vertical link
+        if y > 0 and grid[y-1][x] == 1:
+            vertical_multiplier = 4.0
+
+        # -----------------------------
+        # Final probability
+        # -----------------------------
+        final_prob = BASE_PROB * horizontal_multiplier * vertical_multiplier
+        if final_prob > 1.0:
+            final_prob = 1.0
+
+        # Spawn or not
+        if random.random() < final_prob:
+            grid[y][x] = 1
+            points.append((x, y))
+            last_point_in_row[y] = x
+            last_point_in_col[x] = y
+
+# ------------------------------------
+# Output summary
+# ------------------------------------
+print(f"Number of spawned points: {len(points)}")
+
+if not points:
+    print("No points were spawned – increase BASE_PROB more.")
+else:
+    px = [p[0] for p in points]
+    py = [p[1] for p in points]
+
+    plt.figure(figsize=(8, 8))
+    plt.scatter(px, py, s=8)
+    plt.gca().invert_yaxis()
+    plt.gca().set_aspect("equal", "box")
+    plt.title("Generated Pattern (Row/Column Propagation) – Base Prob 0.03")
+
+    plt.savefig("grid_pattern.png", dpi=200)
+    print("Saved plot as grid_pattern.png")
+
+    plt.show()
