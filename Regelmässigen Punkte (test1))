@@ -1,7 +1,7 @@
 import random
 import matplotlib.pyplot as plt
 
-GRID_SIZE = 100
+GRID_SIZE = 200
 BASE_PROB = 0.03  # 3%
 
 points = []  # list of (x, y)
