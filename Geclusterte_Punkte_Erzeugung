@@ -1,0 +1,173 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ======================================================
+# CONFIG
+# ======================================================
+N_POINTS = 500
+K_CLUSTERS = 5
+MAP_MIN = 0
+MAP_MAX = 100
+
+SAVE_1 = "plot1_random_points.png"
+SAVE_2 = "plot2_example_circle_before.png"
+SAVE_3 = "plot3_example_circle_after.png"
+SAVE_4 = "plot4_clustered_points.png"
+
+
+# ======================================================
+# 1. GENERATE RANDOM POINTS (uniform)
+# ======================================================
+points = np.random.uniform(MAP_MIN, MAP_MAX, size=(N_POINTS, 2))
+
+
+# ======================================================
+# 2. RANDOMLY PICK K CLUSTER CENTERS
+# ======================================================
+center_indices = np.random.choice(N_POINTS, K_CLUSTERS, replace=False)
+centers = points[center_indices]
+
+
+# ======================================================
+# 3. SELECT ONE EXAMPLE POINT + NEAREST CENTER
+# ======================================================
+example_index = np.random.randint(N_POINTS)
+example_point = points[example_index]
+
+distances = np.linalg.norm(centers - example_point, axis=1)
+nearest_center_idx = np.argmin(distances)
+nearest_center = centers[nearest_center_idx]
+circle_radius = distances[nearest_center_idx]
+
+# colors (kept consistent across all 4 plots)
+example_color = "green"
+center_color = "blue"
+
+
+# ======================================================
+# PLOT 1 — RANDOM POINTS
+# ======================================================
+plt.figure(figsize=(8, 8))
+plt.scatter(points[:,0], points[:,1], s=10, alpha=0.6)
+plt.scatter(centers[:,0], centers[:,1], c="red", s=50, label="Centers")
+plt.title("Plot 1: Random Points")
+plt.xlim(MAP_MIN, MAP_MAX)
+plt.ylim(MAP_MIN, MAP_MAX)
+plt.savefig(SAVE_1, dpi=200)
+plt.close()
+
+
+# ======================================================
+# PLOT 2 — RANDOM POINTS + EXAMPLE + CIRCLE
+# ======================================================
+plt.figure(figsize=(8, 8))
+plt.scatter(points[:,0], points[:,1], s=10, alpha=0.6)
+plt.scatter(centers[:,0], centers[:,1], c="red", s=50, label="Centers")
+
+plt.scatter(example_point[0], example_point[1], c=example_color, s=60, label="Example Point")
+plt.scatter(nearest_center[0], nearest_center[1], c=center_color, s=80, label="Nearest Center")
+
+circle = plt.Circle(
+    (nearest_center[0], nearest_center[1]),
+    circle_radius,
+    color=center_color,
+    fill=False,
+    linewidth=1.6,
+    alpha=0.9
+)
+plt.gca().add_patch(circle)
+
+plt.title("Plot 2: Example Point + Circle (Before Clustering)")
+plt.legend()
+plt.xlim(MAP_MIN, MAP_MAX)
+plt.ylim(MAP_MIN, MAP_MAX)
+plt.savefig(SAVE_2, dpi=200)
+plt.close()
+
+
+# ======================================================
+# 4. ASSIGN EACH POINT TO CLOSEST CENTER
+# ======================================================
+def nearest_center_fn(point, centers):
+    d = np.linalg.norm(centers - point, axis=1)
+    i = np.argmin(d)
+    return i, d[i]
+
+assignments = []
+radii = []
+
+for p in points:
+    ci, dist = nearest_center_fn(p, centers)
+    assignments.append(ci)
+    radii.append(dist)
+
+assignments = np.array(assignments)
+radii = np.array(radii)
+
+
+# ======================================================
+# 5. CREATE CLUSTERED POINTS
+# ======================================================
+new_points = np.zeros_like(points)
+
+for i, p in enumerate(points):
+    c = centers[assignments[i]]
+    r = radii[i]
+
+    angle = np.random.uniform(0, 2*np.pi)
+    radius = np.random.uniform(0, r)
+
+    new_x = c[0] + radius * np.cos(angle)
+    new_y = c[1] + radius * np.sin(angle)
+
+    new_points[i] = [new_x, new_y]
+
+
+# ======================================================
+# PLOT 3 — AFTER CLUSTERING BUT SHOW SAME CIRCLE
+# ======================================================
+plt.figure(figsize=(8, 8))
+
+plt.scatter(new_points[:,0], new_points[:,1], s=10, alpha=0.6)
+
+# We show THE SAME example point + center + SAME circle
+plt.scatter(example_point[0], example_point[1], c=example_color, s=60, label="Example Point (old)")
+plt.scatter(nearest_center[0], nearest_center[1], c=center_color, s=80, label="Center")
+
+circle2 = plt.Circle(
+    (nearest_center[0], nearest_center[1]),
+    circle_radius,
+    color=center_color,
+    fill=False,
+    linewidth=1.7,
+    alpha=0.9
+)
+plt.gca().add_patch(circle2)
+
+plt.title("Plot 3: After Clustering (Circle from Before to Compare Area)")
+plt.legend()
+plt.xlim(MAP_MIN, MAP_MAX)
+plt.ylim(MAP_MIN, MAP_MAX)
+plt.savefig(SAVE_3, dpi=200)
+plt.close()
+
+
+# ======================================================
+# PLOT 4 — FINAL CLUSTERED POINTS (clean)
+# ======================================================
+plt.figure(figsize=(8, 8))
+
+for k in range(K_CLUSTERS):
+    cluster_pts = new_points[assignments == k]
+    plt.scatter(cluster_pts[:,0], cluster_pts[:,1], s=12, alpha=0.7)
+
+plt.scatter(centers[:,0], centers[:,1], c="black", s=70, marker="x")
+
+plt.title("Plot 4: Final Clustered Points (Clean)")
+plt.xlim(MAP_MIN, MAP_MAX)
+plt.ylim(MAP_MIN, MAP_MAX)
+plt.savefig(SAVE_4, dpi=200)
+plt.close()
+
+
+print("Saved plots:", SAVE_1, SAVE_2, SAVE_3, SAVE_4)
