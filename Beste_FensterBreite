@@ -1,0 +1,314 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
+import random
+import numpy as np
+
+# ===============================
+# CONFIG
+# ===============================
+INPUT_FILE = "tspparametre.txt"
+OUTDIR = Path("tsp_plots_all_sizes")
+DT_FMT = "%d.%m.%Y-%H:%M:%S"
+
+RAND_DIM_MIN = 400
+RAND_DIM_MAX = 1000
+N_RANDOM_TRIALS = 4000
+RANDOM_SEED = 42
+
+BIN_WIDTH = 20
+QUANTILE_CUTOFF = 0.95
+
+OUTDIR.mkdir(exist_ok=True)
+
+# ===============================
+# LOAD DATA
+# ===============================
+df = pd.read_csv(
+    INPUT_FILE,
+    sep=r"\s+",
+    header=None,
+    names=[
+        "instanzgroesse",
+        "instanznummer",
+        "fensterbreite",
+        "shift",
+        "start_time",
+        "end_preprocessing",
+        "end_final",
+    ],
+    engine="python",
+)
+
+df["start_time"] = pd.to_datetime(df["start_time"], format=DT_FMT, errors="coerce")
+df["end_preprocessing"] = pd.to_datetime(df["end_preprocessing"], format=DT_FMT, errors="coerce")
+df["end_final"] = pd.to_datetime(df["end_final"], format=DT_FMT, errors="coerce")
+df = df.dropna(subset=["start_time", "end_preprocessing", "end_final"]).copy()
+
+# ===============================
+# DERIVED TIMES (seconds)
+# ===============================
+df["preprocessing_s"] = (df["end_preprocessing"] - df["start_time"]).dt.total_seconds()
+df["solver_s"] = (df["end_final"] - df["end_preprocessing"]).dt.total_seconds()
+df["total_s"] = (df["end_final"] - df["start_time"]).dt.total_seconds()
+
+# ===============================
+# MEAN BY (dimension, window)
+# ===============================
+means = (
+    df.groupby(["instanzgroesse", "fensterbreite"], as_index=False)
+    .agg(
+        preprocessing_mean=("preprocessing_s", "mean"),
+        solver_mean=("solver_s", "mean"),
+        total_mean=("total_s", "mean"),
+    )
+    .sort_values(["instanzgroesse", "fensterbreite"])
+)
+
+sizes = sorted(means["instanzgroesse"].unique())
+
+# ===============================
+# GLOBAL LINE PLOT (NO COLORS, NO LEGEND)
+# X-TICKS SHOW BOTH: Fensterbreite (W) and Shift (S=W/2)
+# ===============================
+def plot_global(metric_col, ylabel, title, filename, ylim=None):
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    all_w = sorted(means["fensterbreite"].unique())
+    ax.set_xticks(all_w)
+    ax.set_xticklabels([f"W={int(w)}\nS={int(w/2)}" for w in all_w])
+
+    for n in sizes:
+        sub = means[means["instanzgroesse"] == n].sort_values("fensterbreite")
+        ax.plot(
+            sub["fensterbreite"],
+            sub[metric_col],
+            marker="o",
+            linewidth=1.2,
+            color="black",
+            alpha=0.6,
+        )
+
+    ax.set_xlabel("Fensterbreite (W) und Shift (S=W/2)")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+
+    if ylim is not None:
+        ax.set_ylim(0, ylim)
+
+    fig.tight_layout()
+    fig.savefig(OUTDIR / filename, dpi=200)
+    plt.close(fig)
+
+# ===============================
+# SPECIAL PLOT: different line color per dimension (NOT green)
+# green only for the minimum point per line
+# ===============================
+def plot_total_min_per_line_green(filename: str):
+    fig, ax = plt.subplots(figsize=(9, 5))
+
+    line_colors = [
+        "tab:blue", "tab:orange", "tab:purple", "tab:brown",
+        "tab:cyan", "tab:pink", "tab:gray", "tab:olive"
+    ]
+
+    for i, n in enumerate(sizes):
+        sub = means[means["instanzgroesse"] == n].sort_values("fensterbreite")
+        c = line_colors[i % len(line_colors)]
+
+        ax.plot(
+            sub["fensterbreite"],
+            sub["total_mean"],
+            marker="o",
+            linewidth=1.6,
+            color=c,
+            label=f"n={int(n)}",
+        )
+
+        min_pos = sub["total_mean"].idxmin()
+        min_row = means.loc[min_pos]
+
+        ax.scatter(
+            min_row["fensterbreite"],
+            min_row["total_mean"],
+            color="green",
+            s=80,
+            zorder=5
+        )
+
+        ax.text(
+            min_row["fensterbreite"],
+            min_row["total_mean"],
+            f"W={int(min_row['fensterbreite'])}",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+        )
+
+    ax.set_xlabel("Fensterbreite")
+    ax.set_ylabel("Mean total runtime (s)")
+    ax.set_title("TSP Mean Total Runtime vs Fensterbreite (min per dimension in green)")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(OUTDIR / filename, dpi=200)
+    plt.close(fig)
+
+# ===============================
+# QUANTILE BOXPLOT FUNCTION
+# ===============================
+def random_sample_preproc_bins_vs_total_boxplot(
+    filename: str,
+    x_limit_pre=None,
+    y_limit_total=None,
+):
+    df_range = df[
+        (df["instanzgroesse"] >= RAND_DIM_MIN) &
+        (df["instanzgroesse"] <= RAND_DIM_MAX)
+    ].copy()
+
+    if df_range.empty:
+        print(f"❌ No data with instanzgroesse in [{RAND_DIM_MIN}, {RAND_DIM_MAX}]")
+        return
+
+    rng = random.Random(RANDOM_SEED)
+
+    sampled_rows = df_range.sample(
+        n=N_RANDOM_TRIALS,
+        replace=True,
+        random_state=rng.randint(0, 10**9),
+    ).copy()
+
+    sampled = pd.DataFrame({
+        "pre": sampled_rows["preprocessing_s"].astype(float).values,
+        "total": sampled_rows["total_s"].astype(float).values,
+    })
+
+    if x_limit_pre is not None:
+        sampled = sampled[sampled["pre"] <= x_limit_pre]
+
+    max_pre = sampled["pre"].max()
+    edges = list(range(0, int(max_pre // BIN_WIDTH + 2) * BIN_WIDTH, BIN_WIDTH))
+    if len(edges) < 2:
+        edges = [0, BIN_WIDTH]
+
+    sampled["pre_bin"] = pd.cut(
+        sampled["pre"], bins=edges, right=False, include_lowest=True
+    )
+
+    data = []
+    labels = []
+
+    for b in sampled["pre_bin"].cat.categories:
+        vals = sampled.loc[sampled["pre_bin"] == b, "total"].values
+        if len(vals) == 0:
+            continue
+
+        q95 = np.quantile(vals, QUANTILE_CUTOFF)
+        vals_q = vals[vals <= q95]
+
+        if y_limit_total is not None:
+            vals_q = vals_q[vals_q <= y_limit_total]
+
+        if len(vals_q) > 0:
+            data.append(vals_q)
+            labels.append(f"{int(b.left)}–{int(b.right)}")
+
+    plt.figure(figsize=(max(10, len(labels) * 0.45), 6))
+    plt.boxplot(data, labels=labels, showfliers=False)
+
+    plt.xlabel(f"Preprocessing time bins (seconds, grouped by {BIN_WIDTH}s)")
+    plt.ylabel("Total runtime (seconds)")
+    plt.title(
+        f"TSP: Total runtime vs preprocessing bins "
+        f"(random {N_RANDOM_TRIALS} samples, ≤95% quantile, n {RAND_DIM_MIN}–{RAND_DIM_MAX})"
+    )
+
+    if y_limit_total is not None:
+        plt.ylim(0, y_limit_total)
+
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(OUTDIR / filename, dpi=200)
+    plt.close()
+
+# ===============================
+# PLOT: dimension vs best window/shift (POINTS ONLY)
+# ===============================
+def plot_best_window_per_dimension_points_only(filename: str):
+    best = (
+        means.loc[means.groupby("instanzgroesse")["total_mean"].idxmin()]
+        .sort_values("instanzgroesse")
+        .copy()
+    )
+    best["shift"] = best["fensterbreite"] / 2.0
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+
+    ax.scatter(best["instanzgroesse"], best["fensterbreite"], s=30, alpha=0.8)
+
+    ax.set_xlabel("Instanzgröße (n)")
+    ax.set_ylabel("Fensterbreite (W)")
+    ax.set_title("Beste Fensterbreite pro Instanzgröße (nur Punkte)")
+    ax.grid(True, alpha=0.3)
+
+    right = ax.secondary_yaxis("right", functions=(lambda w: w/2, lambda s: s*2))
+    right.set_ylabel("Shift (S=W/2)")
+
+    fig.tight_layout()
+    fig.savefig(OUTDIR / filename, dpi=200)
+    plt.close(fig)
+
+# ===============================
+# CREATE PLOTS
+# ===============================
+plot_global(
+    "preprocessing_mean",
+    "Mean preprocessing time (s)",
+    "TSP Mean Preprocessing Time vs Fensterbreite (ALL dimensions)",
+    "tsp_global_mean_preprocessing_vs_fensterbreite_all_dimensions.png",
+)
+
+plot_global(
+    "solver_mean",
+    "Mean solver time (s)",
+    "TSP Mean Solver Time vs Fensterbreite (ALL dimensions)",
+    "tsp_global_mean_solver_vs_fensterbreite_all_dimensions.png",
+)
+
+plot_global(
+    "total_mean",
+    "Mean total runtime (s)",
+    "TSP Mean Total Runtime vs Fensterbreite (ALL dimensions)",
+    "tsp_global_mean_total_runtime_all_dimensions.png",
+)
+
+plot_global(
+    "total_mean",
+    "Mean total runtime (s)",
+    "TSP Mean Total Runtime vs Fensterbreite (Y ≤ 200) (ALL dimensions)",
+    "tsp_global_mean_total_runtime_all_dimensions_ylim200.png",
+    ylim=200,
+)
+
+plot_total_min_per_line_green(
+    "tsp_global_mean_total_runtime_all_dimensions_min_per_line_green.png"
+)
+
+random_sample_preproc_bins_vs_total_boxplot(
+    "tsp_random_sample_total_vs_preproc_bins20_q95_boxplot_400_1000.png"
+)
+
+random_sample_preproc_bins_vs_total_boxplot(
+    "tsp_random_sample_total_vs_preproc_bins20_q95_xlim360_ylim1500.png",
+    x_limit_pre=360,
+    y_limit_total=1500,
+)
+
+plot_best_window_per_dimension_points_only(
+    "tsp_best_fensterbreite_per_dimension_points_only.png"
+)
+
+print("✅ All plots saved in:", OUTDIR.resolve())
