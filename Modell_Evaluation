@@ -1,0 +1,167 @@
+# -*- coding: utf-8 -*-
+import os, json
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# =======================
+# 1) Configure folders
+# =======================
+FOLDERS_FIT  = ["b300_700.1", "b700_1000.1"]   # first dataset -> get (a,b) here
+FOLDERS_TEST = ["b300_700.2", "b700_1000.2"]   # second dataset -> evaluate here
+
+# Binning (for quantile curve on FIT set only)
+BIN_START, BIN_STOP, BIN_STEP = 300, 1000, 20
+MIN_SAMPLES_PER_BIN = 10
+
+# Optional plotting limit (uncomment to cap y)
+YLIM = None  # e.g. (0, 10000)
+
+# =======================
+# 2) IO helpers
+# =======================
+def read_and_compute_runtime(filename: str) -> pd.DataFrame:
+    df = pd.read_csv(filename, sep=r"\s+", header=None,
+                     names=["id", "start", "pre_end", "solver_end"])
+    tf = "%d.%m.%Y-%H:%M:%S"
+    df["start"] = pd.to_datetime(df["start"], format=tf, errors="coerce")
+    df["solver_end"] = pd.to_datetime(df["solver_end"], format=tf, errors="coerce")
+    df["runtime_s"] = (df["solver_end"] - df["start"]).dt.total_seconds()
+    return df[["id", "runtime_s"]]
+
+def read_dimensions(folder: str, n=4000):
+    dims = []
+    stem = os.path.basename(folder)
+    stems_to_try = [stem, stem[:-2]] if stem.endswith(".1") or stem.endswith(".2") else [stem, stem + ".1"]
+    for i in range(n):
+        cands = []
+        for s in stems_to_try:
+            cands.append(os.path.join(folder, f"{s}_{i}.json"))
+            cands.append(os.path.join(folder, f"{s}_{i}_sol.json"))
+        path = next((p for p in cands if os.path.exists(p)), None)
+        if path is None:
+            dims.append(None); continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            dims.append(data.get("dimension"))
+        except Exception:
+            dims.append(None)
+    return dims
+
+def load_folder(folder: str) -> pd.DataFrame:
+    rt = os.path.join(folder, "runtimes.mp80")
+    if not os.path.exists(rt):
+        raise FileNotFoundError(f"Missing runtimes file: {rt}")
+    runtimes = read_and_compute_runtime(rt)
+    dims = read_dimensions(folder, n=len(runtimes) + 200)
+    n = min(len(dims), len(runtimes))
+    df = pd.DataFrame({
+        "dimension": dims[:n],
+        "runtime_s": runtimes["runtime_s"].iloc[:n].values
+    }).dropna(subset=["dimension", "runtime_s"])
+    return df
+
+def load_many(folders):
+    dfs = [load_folder(f) for f in folders]
+    return pd.concat(dfs, ignore_index=True).sort_values("dimension")
+
+# =======================
+# 3) Fit on FIRST dataset
+# =======================
+df_fit = load_many(FOLDERS_FIT)
+print(f"[FIT] rows: {len(df_fit)}")
+
+edges = np.append(np.arange(BIN_START, BIN_STOP, BIN_STEP), BIN_STOP)
+df_fit["bin_code"] = pd.cut(df_fit["dimension"], bins=edges, include_lowest=True, labels=False)
+
+grp = df_fit.groupby("bin_code", observed=True)
+counts = grp["runtime_s"].size()
+valid = counts[counts >= MIN_SAMPLES_PER_BIN].index
+
+quantiles = grp["runtime_s"].quantile(0.95).loc[valid].dropna()
+x_q = np.array([(edges[i] + edges[i+1]) / 2.0 for i in quantiles.index])  # midpoints
+y_q = quantiles.to_numpy()
+
+mask = np.isfinite(x_q) & np.isfinite(y_q) & (y_q > 0)
+x_fit = x_q[mask]
+log_y = np.log(y_q[mask])
+
+n = len(x_fit)
+sum_x = np.sum(x_fit); sum_y = np.sum(log_y)
+sum_xy = np.sum(x_fit * log_y); sum_x2 = np.sum(x_fit**2)
+den = n * sum_x2 - (sum_x**2)
+a = (n * sum_xy - sum_x * sum_y) / den
+b = (sum_y - a * sum_x) / n
+
+print("\n=== FIXED EQUATION from FIRST dataset ===")
+print(f"log(y) = {a:.6f} * x + {b:.6f}")
+print(f"y = {np.exp(b):.3e} * e^({a:.6f} * x)")
+
+# (Optional) Quick plot of quantile points + fit for documentation
+x_line_fit = np.linspace(df_fit["dimension"].min(), df_fit["dimension"].max(), 400)
+y_line_fit = np.exp(b) * np.exp(a * x_line_fit)
+plt.figure(figsize=(9,5))
+plt.scatter(x_fit, np.exp(log_y), s=22, label="95%-Quantil (Daten)")
+plt.plot(x_line_fit, y_line_fit, "r-", lw=2.2, label=f"Exp-Fit: y = {np.exp(b):.2e}·e^({a:.4f}x)")
+plt.xlabel("Dimension (Gruppen-Mittelpunkt)")
+plt.ylabel("95%-Quantil der Laufzeit (Sekunden)")
+plt.title("95%-Quantil (FIT-Datensatz) + exponentielle Anpassung")
+plt.grid(True, alpha=0.3); plt.legend(); 
+if YLIM: plt.ylim(*YLIM)
+plt.tight_layout(); plt.savefig("fit_dataset_quantile_fit.png", dpi=180); plt.show()
+
+# =======================
+# 4) TEST on SECOND dataset (no refit!)
+# =======================
+df_test = load_many(FOLDERS_TEST)
+print(f"[TEST] rows: {len(df_test)}")
+
+# Predicted 95%-quantile for every observed dimension in TEST set
+y_pred = np.exp(b) * np.exp(a * df_test["dimension"].to_numpy())
+runt = df_test["runtime_s"].to_numpy()
+
+below_mask = runt <= y_pred
+above_mask = ~below_mask
+
+# Scatter of ALL runtimes (TEST) + the FIXED exponential line from FIT
+x_line = np.linspace(df_test["dimension"].min(), df_test["dimension"].max(), 400)
+y_line = np.exp(b) * np.exp(a * x_line)
+
+plt.figure(figsize=(10, 6))
+plt.scatter(df_test.loc[below_mask, "dimension"], df_test.loc[below_mask, "runtime_s"],
+            s=4, alpha=0.6, color="gray", label="Laufzeiten ≤ vorhergesagtes 95%-Quantil (fixes Modell)")
+plt.scatter(df_test.loc[above_mask, "dimension"], df_test.loc[above_mask, "runtime_s"],
+            s=6, alpha=0.6, color="crimson", label="Laufzeiten > vorhergesagtes 95%-Quantil (fixes Modell)")
+plt.plot(x_line, y_line, color="black", lw=2.2,
+         label=f"Fixe 95%-Quantil-Linie: y = {np.exp(b):.2e}·e^({a:.4f}·x)")
+plt.xlabel("Dimension (Anzahl Städte)")
+plt.ylabel("Laufzeit (Sekunden)")
+plt.ylim(0, 5000)
+plt.title("TEST: Alle Laufzeiten vs. FIXE 95%-Quantil-Linie (aus erstem Datensatz)")
+plt.grid(True, alpha=0.3); plt.legend()
+if YLIM: plt.ylim(*YLIM)
+plt.tight_layout(); plt.savefig("test_all_scatter_with_fixed_95q_line.limitedY.png", dpi=200); plt.show()
+
+# Percentages above/below (TEST)
+total = len(df_test)
+below_count = int(below_mask.sum()); above_count = int(above_mask.sum())
+below_pct = 100.0 * below_count / total if total else 0.0
+above_pct = 100.0 * above_count / total if total else 0.0
+
+print(f"\n[TEST] Total points: {total}")
+print(f"[TEST] ≤ fixed 95% line: {below_count} ({below_pct:.2f}%)")
+print(f"[TEST] > fixed 95% line: {above_count} ({above_pct:.2f}%)")
+
+plt.figure(figsize=(7,5))
+cats = ["≤ 95%-Linie", "> 95%-Linie"]
+vals = [below_pct, above_pct]
+bars = plt.bar(cats, vals)
+for bar, v in zip(bars, vals):
+    plt.text(bar.get_x()+bar.get_width()/2, bar.get_height()+0.5, f"{v:.2f}%",
+             ha="center", va="bottom", fontsize=11)
+plt.ylim(0, max(vals)*1.15 if total else 100)
+plt.ylabel("Anteil der Werte (%)")
+plt.title("TEST: Anteil der Laufzeiten relativ zur FIXEN 95%-Quantil-Linie")
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout(); plt.savefig("test_share_below_above_fixed_95q.png", dpi=200); plt.show()
