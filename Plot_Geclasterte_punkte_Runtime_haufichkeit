@@ -1,0 +1,93 @@
+import os
+import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+JSON_FOLDER = "clustered_hi_0.75"  # folder that contains instance_<id>.json
+RUNTIMES_FILE = "clustered_hi_0.75/runtimes_clustered_hi_0.75.mp80"
+TIME_FORMAT = "%d.%m.%Y-%H:%M:%S"
+BIN_SIZE = 30  # seconds
+
+# -----------------------
+# 1) Read runtimes file and compute runtime_s
+# -----------------------
+rt = pd.read_csv(
+    RUNTIMES_FILE,
+    sep=r"\s+",
+    header=None,
+    names=["id", "start", "pre_end", "solver_end"]
+)
+
+rt["start"] = pd.to_datetime(rt["start"], format=TIME_FORMAT, errors="coerce")
+rt["solver_end"] = pd.to_datetime(rt["solver_end"], format=TIME_FORMAT, errors="coerce")
+rt["runtime_s"] = (rt["solver_end"] - rt["start"]).dt.total_seconds()
+
+rt = rt.dropna(subset=["id", "runtime_s"]).copy()
+rt["id"] = rt["id"].astype(int)
+
+print("✅ runtimes rows:", len(rt))
+
+# -----------------------
+# 2) Read available instance IDs from JSON folder (ignore missing)
+# -----------------------
+pat = re.compile(r"instance_(\d+)\.json$")
+ids = []
+
+for fn in os.listdir(JSON_FOLDER):
+    m = pat.match(fn)
+    if m:
+        ids.append(int(m.group(1)))
+
+ids = sorted(set(ids))
+print("✅ JSON instances found:", len(ids))
+
+df_ids = pd.DataFrame({"id": ids})
+
+# -----------------------
+# 3) Merge: only ids that exist in BOTH JSON and runtimes file
+# -----------------------
+df = df_ids.merge(rt[["id", "runtime_s"]], on="id", how="inner")
+print("✅ merged usable rows:", len(df))
+
+if df.empty:
+    raise ValueError("No overlapping IDs between JSON instances and the runtimes file.")
+
+# -----------------------
+# 4) Statistics (Mittelwert & Median)
+# -----------------------
+runtimes = df["runtime_s"].values
+
+mean_runtime = float(np.mean(runtimes))
+median_runtime = float(np.median(runtimes))
+
+print("\n📊 Laufzeit-Statistik (HI = 0.75)")
+print(f"Anzahl Instanzen (n): {len(runtimes)}")
+print(f"Mittelwert (Mean): {mean_runtime:.2f} s")
+print(f"Median: {median_runtime:.2f} s")
+print(f"Min: {float(np.min(runtimes)):.2f} s")
+print(f"Max: {float(np.max(runtimes)):.2f} s")
+print(f"Std-Abweichung: {float(np.std(runtimes, ddof=1)):.2f} s")
+
+# -----------------------
+# 5) Group runtime into 30-second bins and plot Häufigkeit
+# -----------------------
+max_rt = runtimes.max()
+bins = np.arange(0, max_rt + BIN_SIZE, BIN_SIZE)
+
+counts, edges = np.histogram(runtimes, bins=bins)
+centers = (edges[:-1] + edges[1:]) / 2.0
+
+plt.figure(figsize=(10, 6))
+plt.bar(centers, counts, width=BIN_SIZE * 0.9)
+plt.xlim(0, 2000)
+plt.xlabel("Laufzeit (Sekunden, 30s-Gruppen)")
+plt.ylabel("Häufigkeit")
+plt.title("02.12_plot_hi075_runtime_frequency_30s")
+plt.grid(axis="y", alpha=0.3)
+
+plt.tight_layout()
+plt.savefig("02.12_plot_hi075_runtime_frequency_30s.png", dpi=300)
+plt.show()
+
+print("✅ Saved: 02.12_plot_hi075_runtime_frequency_30s.png")
